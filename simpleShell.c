@@ -4,8 +4,6 @@
 #include <stdlib.h>
 #include<signal.h>
 
-//https://brennan.io/2015/01/16/write-a-shell-in-c/
-
 int leituraTerminal(char *buffer);
 char interpretaEntrada(char *buffer, int tamanhoEntrada, char *prog);
 
@@ -22,8 +20,8 @@ int main()
 			kill (- shell_pgid, SIGTTIN);
 		}
 
-		//Alocando um buffer dinamico para guardar a entrada do terminal	
-		char *buffer = malloc(sizeof(char) * 1024);
+		//Alocando um tamanho maximo para a entrada do terminal - precisa verificar sobre alocacao dinamica
+		char buffer[20];
 		int tamanhoEntrada = leituraTerminal(&buffer);
 
 		//variavel na qual vai ser salvo o programa digitado, futuramente sera substituido por uma matriz de argumentos tipo argv
