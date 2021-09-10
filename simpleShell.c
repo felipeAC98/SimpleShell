@@ -48,7 +48,7 @@ int main()
 
 		if(!result) {  // filho
 			//passando para o filho o comando que deve ser executado
-			result=execlp(prog,prog,NULL);;
+			result=execvp(prog,argv);
 
 			perror("Erro em execl");
 			exit(0);
