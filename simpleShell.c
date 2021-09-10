@@ -1,18 +1,41 @@
 #include <stdio.h>    
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include<signal.h>
+#include <signal.h>
 #include <string.h>
 
 int leituraTerminal(char *buffer, int *nParametros);
 char interpretaEntrada(char *buffer, int tamanhoEntrada, char *prog);
+
+void child_hand(int sigNum){
+	pid_t pidFilho;
+	int status;
+
+	pidFilho=waitpid(-1, &status , 0);
+
+	if(pidFilho!=-1){
+		printf("o filho %d terminou com status %d \n",pidFilho, WEXITSTATUS(status));
+	}
+
+}
 
 int main()
 { 
 	pid_t shell_pgid;
 	pid_t result;
 	int shell_terminal = STDIN_FILENO;
+
+	if(signal(SIGCHLD, child_hand)==SIG_ERR) {
+	perror("Erro capturando tratamento do sinal");
+	return(0);
+	}
+
+	/*if(signal(SIGTSTP, SIG_IGN)==SIG_ERR) {
+	perror("Erro capturando tratamento do sinal");
+	return(0);
+	}*/
 
 	while(1){
 		int nParametros=1;
@@ -56,7 +79,7 @@ int main()
 		}else {  // pai
 
 			//este wait faz com que o pai espere o filho terminar, logo o processo filho estara rodando em foreground
-			waitpid(result, NULL, 0);
+			//waitpid(result, NULL, 0);
 			//printf("Pai retomou a execucao.\n");
 			printf("\n");
 		}
