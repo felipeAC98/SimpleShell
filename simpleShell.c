@@ -57,6 +57,13 @@ int main()
 
 		separaStrings(&buffer, &argv, &prog, tamanhoEntrada, nParametros);
 
+		// verifica se o programa irá rodar em foreground ou background
+		int bg = 0;
+		if(strcmp(argv[nParametros-1],"&") == 0)
+		{	
+			argv[nParametros-1] = NULL;
+			bg = 1;
+		}
 
 		//faz a separacao dos comandos e parametros recebidos
 		//interpretaEntrada(&buffer, tamanhoEntrada,  &prog);
@@ -78,8 +85,10 @@ int main()
 
 		}else {  // pai
 
+			// verificando se é para o programa rodar em background
+			if(bg == 0)
 			//este wait faz com que o pai espere o filho terminar, logo o processo filho estara rodando em foreground
-			//waitpid(result, NULL, 0);
+				waitpid(result, NULL, 0);
 			//printf("Pai retomou a execucao.\n");
 			printf("\n");
 		}
