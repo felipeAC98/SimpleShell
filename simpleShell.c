@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 int leituraTerminal(char *buffer, int *nParametros);
 char interpretaEntrada(char *buffer, int tamanhoEntrada, char *prog);
@@ -25,6 +27,7 @@ int main()
 { 
 	pid_t shell_pgid;
 	pid_t result;
+	pid_t res;
 	int shell_terminal = STDIN_FILENO;
 
 	if(signal(SIGCHLD, child_hand)==SIG_ERR) {
@@ -65,6 +68,16 @@ int main()
 			bg = 1;
 		}
 
+		int saidaArquivo = 0;
+		for(int i = 1; i<nParametros; i++)
+		{
+			if(strcmp(argv[i],">") == 0)
+			{
+				saidaArquivo = i;
+				argv[i] = NULL;
+			}
+		}
+
 		//faz a separacao dos comandos e parametros recebidos
 		//interpretaEntrada(&buffer, tamanhoEntrada,  &prog);
 
@@ -77,6 +90,16 @@ int main()
 		}
 
 		if(!result) {  // filho
+
+			if(saidaArquivo!=0)
+			{	
+				char fileName[50] = "";
+				strcat(fileName, argv[saidaArquivo+1]);
+				int output_fds = open(fileName, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+				argv[saidaArquivo+1] = NULL;
+				res = dup2(output_fds, STDOUT_FILENO);
+			}
+
 			//passando para o filho o comando que deve ser executado
 			result=execvp(prog,argv);
 
