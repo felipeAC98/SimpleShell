@@ -10,6 +10,7 @@
 
 int leituraTerminal(char *buffer, int *nParametros);
 char interpretaEntrada(char *buffer, int tamanhoEntrada, char *prog);
+int verificaExecucaoBG(char *argv[], int nParametros);
 
 void child_hand(int sigNum){
 	pid_t pidFilho;
@@ -60,18 +61,19 @@ int main()
 
 		separaStrings(&buffer, &argv, &prog, tamanhoEntrada, nParametros);
 
-		// verifica se o programa irá rodar em foreground ou background
-		int bg = 0;
-		if(strcmp(argv[nParametros-1],"&") == 0)
+		// verifica se o programa irá rodar em foreground ou background e retorna a posicao em que foi localizado o &
+		int bg = verificaExecucaoBG(&argv,nParametros);
+
+		if(bg != 0)
 		{	
-			argv[nParametros-1] = NULL;
-			bg = 1;
+			argv[bg] = NULL;
+			nParametros=bg;
 		}
 
 		int saidaArquivo = 0;
 		for(int i = 1; i<nParametros; i++)
 		{
-			if(bg ==0 && strcmp(argv[i],">") == 0)
+			if(strcmp(argv[i],">") == 0)
 			{
 				saidaArquivo = i;
 				argv[i] = NULL;
@@ -182,5 +184,18 @@ void separaStrings(char *buffer, char *argv[], char *prog, int tamanhoEntrada, i
 	argv[argumentoAtual]=NULL;
 	//printf("prog: %s\n",prog);
 	//printf("parametro: %s\n",parametro);
+
+}
+
+int verificaExecucaoBG(char *argv[], int nParametros){
+
+	//Procurando a primeira ocorrencia do simbolo & para retornar informando que a execucao em background sera necessaria
+	for(int i=1; i<nParametros;i++){
+		if(strcmp(argv[i],"&") == 0){
+			return i;
+		}
+	}
+
+	return 0;
 
 }
