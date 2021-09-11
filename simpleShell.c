@@ -71,7 +71,7 @@ int main()
 		int saidaArquivo = 0;
 		for(int i = 1; i<nParametros; i++)
 		{
-			if(strcmp(argv[i],">") == 0)
+			if(bg ==0 && strcmp(argv[i],">") == 0)
 			{
 				saidaArquivo = i;
 				argv[i] = NULL;
