@@ -118,3 +118,32 @@ int main()
 
 	}
 }
+
+int leituraTerminal(char *buffer, int *nParametros){
+
+	//alocando um buffer na memoria
+	int c;
+	int tamanhoEntrada=0;
+
+	printf("$ ");
+
+	while(1){
+		c = getchar();
+
+		//inserindo no buffer na posicao "tamanhoEntrada" o proximo caracter lido
+		buffer[tamanhoEntrada] = c;
+
+		if(c == EOF || c=='\n'){
+			buffer[tamanhoEntrada] = '\0';
+			return tamanhoEntrada;
+		}
+		else if(c == ' '){
+			*nParametros=*nParametros+1;	
+		}
+
+		tamanhoEntrada++;
+
+	}
+
+}
+
