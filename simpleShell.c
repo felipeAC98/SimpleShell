@@ -10,7 +10,7 @@
 
 int leituraTerminal(char *buffer, int *nParametros);
 char interpretaEntrada(char *buffer, int tamanhoEntrada, char *prog);
-int verificaExecucaoBG(char *argv[], int nParametros);
+void verificaTipoExecucao(char *argv[], int nParametros, int *bg, int *saidaArquivo, int *pPipe);
 
 void child_hand(int sigNum){
 	pid_t pidFilho;
@@ -61,30 +61,21 @@ int main()
 
 		separaStrings(&buffer, &argv, &prog, tamanhoEntrada, nParametros);
 
-		// verifica se o programa irá rodar em foreground ou background
-		int bg = verificaExecucaoBG(&argv,nParametros);
-
-		if(bg != 0)
-		{	
-			argv[bg] = NULL;
-			nParametros=bg;
-		}
-
+		int bg = 0; // verifica se o programa irá rodar em foreground ou background
 		int saidaArquivo = 0;
-		for(int i = 1; i<nParametros; i++)
-		{
-			if(strcmp(argv[i],">") == 0)
-			{
-				saidaArquivo = i;
-				argv[i] = NULL;
-			}
-		}
+		int pPipe = 0;
+
+		//Variaveis extra necessarias para caso de programa com pipe
+		char *argv2[nParametros+1];
+		char prog2[tamanhoEntrada];
+
+		verificaTipoExecucao(&argv,nParametros, &bg, &saidaArquivo, &pPipe);
 
 		//faz a separacao dos comandos e parametros recebidos
 		//interpretaEntrada(&buffer, tamanhoEntrada,  &prog);
 
 		// faz o fork do processo
-		result=vfork();
+		result=fork();
 
 		if(result==-1) {
 		  perror("Erro em vfork");
@@ -102,18 +93,63 @@ int main()
 				res = dup2(output_fds, STDOUT_FILENO);
 			}
 
-			//passando para o filho o comando que deve ser executado
-			result=execvp(prog,argv);
+			if(pPipe!=0){
 
+				int pipefd[2];
+				int resDup, resultPipe;
+
+				if (pipe(pipefd) == -1) {
+					perror("Abertura do pipe");
+					exit(0);
+				}
+
+				resultPipe=fork();
+				if(resultPipe){
+					close(pipefd[1]);
+
+					//redirecionando a entrada do filho para ser a saida do pai
+					resDup = dup2(pipefd[0],STDIN_FILENO);
+
+					//passando o programa e parametros para o inicio do vetor argv para o processo filho 
+					strcpy(prog2, argv[pPipe+1]);
+
+					int pArgumento=0;
+
+					for(pArgumento=pPipe+1; pArgumento<nParametros; pArgumento++){
+						argv2[pArgumento-pPipe-1]=argv[pArgumento];
+					}
+
+					argv2[nParametros-pPipe-1]=NULL;
+
+					//passando para o filho o comando que deve ser executado
+					execvp(prog2,argv2);
+					close(pipefd[0]);
+					exit(0);
+
+				}else{
+					close(pipefd[0]);
+					//redirecionando a saida do pai para a entrada do filho
+					resDup = dup2(pipefd[1],STDOUT_FILENO);
+
+					execvp(prog,argv);
+					close(pipefd[1]);
+					perror("Erro em execl");
+					exit(0);
+				}
+			}
+
+			//passando para o filho o comando que deve ser executado
+			execvp(prog,argv);
 			perror("Erro em execl");
 			exit(0);
 
 		}else {  // pai
 
 			// verificando se é para o programa rodar em background
-			if(bg == 0)
-			//este wait faz com que o pai espere o filho terminar, logo o processo filho estara rodando em foreground
+			if(bg == 0){
+				//este wait faz com que o pai espere o filho terminar, logo o processo filho estara rodando em foreground
 				waitpid(result, NULL, 0);
+			}
 			//printf("Pai retomou a execucao.\n");
 			printf("\n");
 		}
@@ -187,15 +223,25 @@ void separaStrings(char *buffer, char *argv[], char *prog, int tamanhoEntrada, i
 
 }
 
-int verificaExecucaoBG(char *argv[], int nParametros){
+void verificaTipoExecucao(char *argv[], int nParametros, int *bg, int *saidaArquivo, int *pPipe){
 
 	//Procurando a primeira ocorrencia do simbolo & para retornar informando que a execucao em background sera necessaria
 	for(int i=1; i<nParametros;i++){
-		if(strcmp(argv[i],"&") == 0){
-			return i;
+		if(strcmp(argv[i],"&") == 0 ){
+			*bg=i;
+			argv[i] = NULL;
 		}
-	}
+		else if(strcmp(argv[i],">") == 0 ){
+			*saidaArquivo=i;
+			argv[i] = NULL;
+		}
+		else if(strcmp(argv[i],"|") == 0){
+			*pPipe=i;
+			argv[i] = NULL;
+		}
 
-	return 0;
+
+	}
+	
 
 }
