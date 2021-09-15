@@ -31,10 +31,10 @@ int main()
 	pid_t res;
 	int shell_terminal = STDIN_FILENO;
 
-	if(signal(SIGCHLD, child_hand)==SIG_ERR) {
+	/*if(signal(SIGCHLD, child_hand)==SIG_ERR) {
 	perror("Erro capturando tratamento do sinal");
 	return(0);
-	}
+	}*/
 
 	/*if(signal(SIGTSTP, SIG_IGN)==SIG_ERR) {
 	perror("Erro capturando tratamento do sinal");
