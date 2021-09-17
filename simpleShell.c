@@ -21,6 +21,8 @@ int main()
 	pid_t res;
 	pid_t _result;
 	int shell_terminal = STDIN_FILENO;
+
+	//"cadastrando" funcao shild_hand para sinais recebidos do tipo SIGCHLD
 	signal(SIGCHLD, child_hand);
 	/*if(signal(SIGCHLD, child_hand)==SIG_ERR) {
 	perror("Erro capturando tratamento do sinal");
@@ -62,9 +64,6 @@ int main()
 
 		verificaTipoExecucao(&argv,nParametros, &bg, &saidaArquivo, &pPipe);
 
-		//faz a separacao dos comandos e parametros recebidos
-		//interpretaEntrada(&buffer, tamanhoEntrada,  &prog);
-
 		// faz o fork do processo
 		_result=fork();
 
@@ -89,6 +88,7 @@ int main()
 				int pipefd[2];
 				int resDup, resultPipe;
 
+				//Utilizando o pipe2 para que seja possivel utilizar flags, O_CLOEXEC para fechar "automaticamente"
 				if (pipe2(pipefd, O_CLOEXEC) == -1) {
 					perror("Abertura do pipe");
 					exit(0);
@@ -173,18 +173,6 @@ int leituraTerminal(char *buffer, int *nParametros){
 
 }
 
-char interpretaEntrada(char *buffer, int tamanhoEntrada, char *prog){
-
-	for(int i=0; i<tamanhoEntrada; i++){
-		prog[i]=buffer[i];
-	}
-
-	//printf("tamanhoEntrada: %d \n",tamanhoEntrada);
-	//printf("buffer: %s \n",buffer);
-
-	return prog;
-}
-
 void separaStrings(char *buffer, char *argv[], char *prog, int tamanhoEntrada, int nParametros){
 
 	int argumentoAtual=0;
@@ -239,7 +227,7 @@ void child_hand(int sigNum){
 	int status;
 
 	// pidFilho=wait(&status);
-	pidFilho=waitpid(-1, &status, WNOHANG);
+	pidFilho=waitpid(-1, &status, WNOHANG); //utilizando o nohang para o pai NAO ficar parado esperando o retorno
 	
 	if (WIFEXITED(status)){
 		printf("o filho %d terminou com status %d e o sinal foi %d \n",pidFilho, status, sigNum);
