@@ -21,6 +21,8 @@ int main()
 	pid_t res;
 	pid_t result;
 	int shell_terminal = STDIN_FILENO;
+	int pipefd[2];
+	int resDup, resultPipe;
 
 	//"cadastrando" funcao shild_hand para sinais recebidos do tipo SIGCHLD
 	signal(SIGCHLD, child_hand);
@@ -73,6 +75,16 @@ int main()
 
 			verificaTipoExecucao(&argv,nParametros, &bg, &saidaArquivo, &pPipe);
 
+			//Verifica e abre pipe caso tenha sido inserido
+			if(pPipe!=0){
+
+				//Utilizando o pipe2 para que seja possivel utilizar flags, O_CLOEXEC para fechar "automaticamente"
+				if (pipe2(pipefd, O_CLOEXEC) == -1) {
+					perror("Abertura do pipe");
+					exit(0);
+				}
+			}
+
 			// faz o fork do processo
 			result=fork();
 
@@ -82,7 +94,6 @@ int main()
 			}
 
 			if(!result) {  // filho
-
 				if(saidaArquivo!=0)
 				{	
 					char fileName[50] = "";
@@ -93,21 +104,31 @@ int main()
 				}
 
 				if(pPipe!=0){
+					//close(pipefd[0]);
+					//redirecionando a saida do filho para o write do pipe
+					resDup = dup2(pipefd[1],STDOUT_FILENO);			
+				}
 
-					int pipefd[2];
-					int resDup, resultPipe;
+				//passando para o filho o comando que deve ser executado
+				execvp(prog,argv);
+				perror("Erro em execl");
+				exit(0);
 
-					//Utilizando o pipe2 para que seja possivel utilizar flags, O_CLOEXEC para fechar "automaticamente"
-					if (pipe2(pipefd, O_CLOEXEC) == -1) {
-						perror("Abertura do pipe");
-						exit(0);
-					}
-
+			}else {  // pai
+				if(pPipe!=0){
+					close(pipefd[1]);
 					resultPipe=fork();
-					if(resultPipe){
-						//close(pipefd[1]);
+					if(!resultPipe){
 
-						//redirecionando a entrada do filho para ser a saida do pai
+						if(saidaArquivo!=0)
+							{	
+								char fileName[50] = "";
+								strcat(fileName, argv[saidaArquivo+1]);
+								int output_fds = open(fileName, O_WRONLY | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
+								argv[saidaArquivo+1] = NULL;
+								res = dup2(output_fds, STDOUT_FILENO);
+							}
+						//redirecionando a entrada do filho para ser o read do pipe
 						resDup = dup2(pipefd[0],STDIN_FILENO);
 
 						//passando o programa e parametros para o inicio do vetor argv para o processo filho 
@@ -123,27 +144,21 @@ int main()
 
 						//passando para o filho o comando que deve ser executado
 						execvp(prog2,argv2);
+						perror("Erro em execl2");
 						exit(0);
 
-					}else{
-						//close(pipefd[0]);
-						//redirecionando a saida do pai para a entrada do filho
-						resDup = dup2(pipefd[1],STDOUT_FILENO);
-
-						execvp(prog,argv);
-						exit(0);
 					}
+					else{
+						if(bg == 0){
+							waitpid(result, NULL, 0);
+							//este wait faz com que o pai espere o processo depois do pipe terminar, logo o processo filho estara rodando em foreground
+							waitpid(resultPipe, NULL, 0);
+						}
+					}
+
 				}
-
-				//passando para o filho o comando que deve ser executado
-				execvp(prog,argv);
-				perror("Erro em execl");
-				exit(0);
-
-			}else {  // pai
-
 				// verificando se é para o programa rodar em background
-				if(bg == 0){
+				if(bg == 0 ){
 					//este wait faz com que o pai espere o filho terminar, logo o processo filho estara rodando em foreground
 					waitpid(result, NULL, 0);
 				}else{
@@ -241,7 +256,7 @@ void child_hand(int sigNum){
 	pidFilho=waitpid(-1, &status, WNOHANG); //utilizando o nohang para o pai NAO ficar parado esperando o retorno
 	
 	if (WIFEXITED(status)){
-		printf("o filho %d terminou com status %d e o sinal foi %d \n",pidFilho, status, sigNum);
+		//printf("o filho %d terminou com status %d e o sinal foi %d \n",pidFilho, status, sigNum);
 		fflush(stdout);
 	}
 }
