@@ -10,7 +10,7 @@
 
 int leituraTerminal(char *buffer, int *nParametros);
 char interpretaEntrada(char *buffer, int tamanhoEntrada, char *prog);
-void verificaTipoExecucao(char *argv[], int nParametros, int *bg, int *saidaArquivo, int *pPipe);
+void verificaTipoExecucao(char *argv[], int nParametros, int *bg, int *saidaArquivo, int pPipe[], int *nPipes);
 void child_hand(int sigNum);
 
 
@@ -21,6 +21,7 @@ int main()
 	pid_t res;
 	pid_t result;
 	int shell_terminal = STDIN_FILENO;
+	int pipefd[2],pipefd2[2];
 
 	//"cadastrando" funcao shild_hand para sinais recebidos do tipo SIGCHLD
 	signal(SIGCHLD, child_hand);
@@ -41,6 +42,7 @@ int main()
 
 	while(1){
 		int nParametros=1;
+		int nProcs=1; //sempre tem pelo menos 1 processo, a menos que tenhamos pipe
 
 		//Inserindo o shell em foreground - vai ficar preso aqui enquanto nao for fg
 		while (tcgetpgrp (shell_terminal) != (shell_pgid = getpgrp ())){
@@ -48,7 +50,7 @@ int main()
 		}
 
 		//Alocando um tamanho maximo para a entrada do terminal - precisa verificar sobre alocacao dinamica
-		char buffer[20];
+		char buffer[255];
 		int tamanhoEntrada=0;
 
 		tamanhoEntrada = leituraTerminal(&buffer, &nParametros);
@@ -65,92 +67,134 @@ int main()
 
 			int bg = 0; // verifica se o programa irá rodar em foreground ou background
 			int saidaArquivo = 0;
-			int pPipe = 0;
+			int pPipe[10];
 
 			//Variaveis extra necessarias para caso de programa com pipe
 			char *argv2[nParametros+1];
 			char prog2[tamanhoEntrada];
 
-			verificaTipoExecucao(&argv,nParametros, &bg, &saidaArquivo, &pPipe);
+			verificaTipoExecucao(&argv,nParametros, &bg, &saidaArquivo, &pPipe, &nProcs);
 
-			// faz o fork do processo
-			result=fork();
+			//sempre ira rodar ao menos uma vez
+			for(int progAt=0;progAt<nProcs;progAt++){
 
-			if(result==-1) {
-			  perror("Erro em fork");
-			  exit(0);
-			}
-
-			if(!result) {  // filho
-
-				if(saidaArquivo!=0)
-				{	
-					char fileName[50] = "";
-					strcat(fileName, argv[saidaArquivo+1]);
-					int output_fds = open(fileName, O_WRONLY | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
-					argv[saidaArquivo+1] = NULL;
-					res = dup2(output_fds, STDOUT_FILENO);
-				}
-
-				if(pPipe!=0){
-
-					int pipefd[2];
-					int resDup, resultPipe;
-
+				if(nProcs>1 && progAt<nProcs-1){
 					//Utilizando o pipe2 para que seja possivel utilizar flags, O_CLOEXEC para fechar "automaticamente"
-					if (pipe2(pipefd, O_CLOEXEC) == -1) {
-						perror("Abertura do pipe");
-						exit(0);
-					}
+					
+					if(progAt%2==0){
 
-					resultPipe=fork();
-					if(resultPipe){
-						//close(pipefd[1]);
-
-						//redirecionando a entrada do filho para ser a saida do pai
-						resDup = dup2(pipefd[0],STDIN_FILENO);
-
-						//passando o programa e parametros para o inicio do vetor argv para o processo filho 
-						strcpy(prog2, argv[pPipe+1]);
-
-						int pArgumento=0;
-
-						for(pArgumento=pPipe+1; pArgumento<nParametros; pArgumento++){
-							argv2[pArgumento-pPipe-1]=argv[pArgumento];
+						if (pipe(pipefd2) == -1) {
+							perror("Abertura do pipe");
+							exit(0);
 						}
-
-						argv2[nParametros-pPipe-1]=NULL;
-
-						//passando para o filho o comando que deve ser executado
-						execvp(prog2,argv2);
-						exit(0);
-
-					}else{
-						//close(pipefd[0]);
-						//redirecionando a saida do pai para a entrada do filho
-						resDup = dup2(pipefd[1],STDOUT_FILENO);
-
-						execvp(prog,argv);
-						exit(0);
+					}
+					else{
+						if (pipe(pipefd) == -1) {
+							perror("Abertura do pipe");
+							exit(0);
+						}
 					}
 				}
 
-				//passando para o filho o comando que deve ser executado
-				execvp(prog,argv);
-				perror("Erro em execl");
-				exit(0);
+				// faz o fork do processo
+				result=fork();
 
-			}else {  // pai
-
-				// verificando se é para o programa rodar em background
-				if(bg == 0){
-					//este wait faz com que o pai espere o filho terminar, logo o processo filho estara rodando em foreground
-					waitpid(result, NULL, 0);
-				}else{
-					printf("[%d]",result);
+				if(result==-1) {
+				  perror("Erro em fork");
+				  exit(0);
 				}
-				//printf("Pai retomou a execucao.\n");
-				printf("\n");
+
+				if(!result) {  // filho
+
+					//se tiver pipe no comando, cria o pipe e altera o vetor de arquivos
+					if(nProcs>1){ 
+						int resDup;
+
+						//caso seja um programa que nao seja o ultimo daqueles passados como parametros
+						if(progAt>=1){
+							if(progAt%2==0){
+								close(pipefd2[0]);
+								//redirecionando a entrada do filho para ser o read do pipe
+								resDup = dup2(pipefd[0],STDIN_FILENO);
+								close(pipefd[0]);
+							}
+							else{
+								close(pipefd[0]);
+								resDup = dup2(pipefd2[0],STDIN_FILENO);
+								close(pipefd2[0]);
+							}
+
+						}
+						//Caso seja o primeiro programa
+						if(progAt<nProcs-1){
+
+							if(progAt%2==0){
+								//close(pipefd[1]);
+								//redirecionando a saida do filho para ser o write do pipefd2
+								resDup = dup2(pipefd2[1],STDOUT_FILENO);
+								//close(pipefd2[1]);
+							}
+							else{
+								//close(pipefd2[1]);
+								resDup = dup2(pipefd[1],STDOUT_FILENO);
+								//close(pipefd[1]);
+							}
+
+						}
+					}
+
+					int pArgumento=-1;
+					//passando para argv2 os argumentos do processo atual
+					if(nProcs>1){
+						//pPipe[pipeAt] retorna a posicao do pipe atual
+						strcpy(prog2, argv[pPipe[progAt]+1]);
+						do{
+							pArgumento++;
+							argv2[pArgumento]=argv[pArgumento+pPipe[progAt]+1];
+							//printf(" argv %s\n",argv2[pArgumento]);
+						}while(argv2[pArgumento]!=NULL);
+					}
+					else{
+						strcpy(prog2, prog);
+						do{
+							pArgumento++;
+							argv2[pArgumento]=argv[pArgumento];
+						}while(argv2[pArgumento]!=NULL);
+					}
+
+					//somente ira inserir a saida caso seja o ultimo programa daqueles a serem executados
+					if(saidaArquivo!=0 && progAt==nProcs-1)
+					{	
+						char fileName[50] = "";
+						strcat(fileName, argv[saidaArquivo+1]);
+						int output_fds = open(fileName, O_WRONLY | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
+						argv[saidaArquivo+1] = NULL;
+						res = dup2(output_fds, STDOUT_FILENO);
+					}
+
+
+					execvp(prog2,argv2);
+					perror("Erro em execl");
+					exit(0);
+
+				}else {  // pai
+					if(progAt%2==0 && progAt<nProcs-1){
+					//close(pipefd[1]);
+						close(pipefd2[1]);
+						//close(pipefd[0]);
+					}
+					else if( progAt<nProcs-1){
+						close(pipefd[1]);
+						//close(pipefd2[0]);
+					}
+					// verificando se é para o programa rodar em background
+					if(bg == 0){
+						//este wait faz com que o pai espere o filho terminar, logo o processo filho estara rodando em foreground
+						waitpid(result, NULL, 0);
+					}else if(progAt==nProcs-1) {
+						printf("[%d]\n",result);
+					}
+				}
 			}
 		}
 	}
@@ -210,7 +254,9 @@ void separaStrings(char *buffer, char *argv[], char *prog, int tamanhoEntrada, i
 
 }
 
-void verificaTipoExecucao(char *argv[], int nParametros, int *bg, int *saidaArquivo, int *pPipe){
+void verificaTipoExecucao(char *argv[], int nParametros, int *bg, int *saidaArquivo, int pPipe[], int *nProg){
+
+	pPipe[0]=-1;//somente definindo que o primeiro programa comeca na posicao -1 pois sera incrementado depois
 
 	//Procurando a primeira ocorrencia do simbolo & para retornar informando que a execucao em background sera necessaria
 	for(int i=1; i<nParametros;i++){
@@ -223,12 +269,13 @@ void verificaTipoExecucao(char *argv[], int nParametros, int *bg, int *saidaArqu
 			argv[i] = NULL;
 		}
 		else if(strcmp(argv[i],"|") == 0){
-			*pPipe=i;
+			pPipe[*nProg]=i;
+			*nProg=*nProg+1;
 			argv[i] = NULL;
 		}
-
-
 	}
+
+
 	
 
 }
@@ -241,7 +288,7 @@ void child_hand(int sigNum){
 	pidFilho=waitpid(-1, &status, WNOHANG); //utilizando o nohang para o pai NAO ficar parado esperando o retorno
 	
 	if (WIFEXITED(status)){
-		printf("o filho %d terminou com status %d e o sinal foi %d \n",pidFilho, status, sigNum);
+		//printf("o filho %d terminou com status %d e o sinal foi %d \n",pidFilho, status, sigNum);
 		fflush(stdout);
 	}
 }
